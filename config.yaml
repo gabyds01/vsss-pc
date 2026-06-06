@@ -10,3 +10,10 @@ firasim:
   # send commands to simulator
   send_ip: 127.0.0.1
   send_port: 20011
+
+hardware:
+  bridge_mac: "00:70:07:25:C3:B8"
+  robots:
+    - id: 0
+      mac: "98:3D:AE:B4:B6:44"
+

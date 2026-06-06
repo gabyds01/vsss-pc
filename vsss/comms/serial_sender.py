@@ -94,16 +94,48 @@ if __name__ == "__main__":
     try:
         sender.open()
         print("Serial port opened successfully.")
-
-        # Send a test command to spin wheels
-        cmd = RobotCommand(
-            robot_id=0, yellow_team=False, wheel_left=2.5, wheel_right=-2.5
-        )
         print(
-            "Sending test command (wheel_left=2.5, wheel_right=-2.5) for blue robot 0..."
+            "Enter left and right velocities in m/s (e.g., '0.15 -0.15' or '0 0' to stop)."
         )
-        sender.send([cmd])
-        print("Test command sent.")
+        print("Type 'q' or Ctrl+C to exit.")
+        print(
+            "-------------------------------------------------------------------------"
+        )
+
+        while True:
+            try:
+                user_input = input("Enter velocities (left right): ").strip()
+                if not user_input:
+                    continue
+                if user_input.lower() == "q":
+                    break
+
+                parts = user_input.split()
+                if len(parts) != 2:
+                    print(
+                        "Error: Please enter exactly two numbers separated by a space."
+                    )
+                    continue
+
+                wl = float(parts[0])
+                wr = float(parts[1])
+
+                cmd = RobotCommand(
+                    robot_id=0, yellow_team=False, wheel_left=wl, wheel_right=wr
+                )
+                print(
+                    f"Sending to Robot 0: wheel_left={wl:.3f} m/s, wheel_right={wr:.3f} m/s"
+                )
+                sender.send([cmd])
+            except ValueError:
+                print("Error: Input must be numeric.")
+            except KeyboardInterrupt, EOFError:
+                print("\nStopping robot and exiting...")
+                stop_cmd = RobotCommand(
+                    robot_id=0, yellow_team=False, wheel_left=0.0, wheel_right=0.0
+                )
+                sender.send([stop_cmd])
+                break
     except Exception as e:
         print(f"Error: {e}")
     finally:
