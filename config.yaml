@@ -1,0 +1,12 @@
+robot_dimensions:
+  # both in meters
+  wheel_radius: 0.3
+  track_width: 0.075
+
+firasim:
+  # read protobuf from simulator
+  read_ip: 224.0.0.1
+  read_port: 10002
+  # send commands to simulator
+  send_ip: 127.0.0.1
+  send_port: 20011
