@@ -129,7 +129,7 @@ if __name__ == "__main__":
                 sender.send([cmd])
             except ValueError:
                 print("Error: Input must be numeric.")
-            except KeyboardInterrupt, EOFError:
+            except (KeyboardInterrupt, EOFError):
                 print("\nStopping robot and exiting...")
                 stop_cmd = RobotCommand(
                     robot_id=0, yellow_team=False, wheel_left=0.0, wheel_right=0.0
