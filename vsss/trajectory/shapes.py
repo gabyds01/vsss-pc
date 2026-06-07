@@ -48,7 +48,48 @@ def generate_s_curve(
     """Generates a smooth S-curve path along the X axis."""
     x_vals = np.linspace(start_x, end_x, 15)
     y_vals = center_y + amplitude * np.sin(
-        np.pi * (x_vals - start_x) / (end_x - start_x)
+        2.0 * np.pi * (x_vals - start_x) / (end_x - start_x)
     )
     waypoints = list(zip(x_vals, y_vals))
     return Path(waypoints, resolution=resolution)
+
+
+def generate_spline(
+    control_points: list[tuple[float, float]], resolution: float = 0.01
+) -> Path:
+    """Generates a smooth spline path passing through the given control points."""
+    from scipy.interpolate import splprep, splev
+
+    if len(control_points) < 2:
+        raise ValueError("At least 2 control points are required for a spline.")
+
+    pts = np.array(control_points)
+    x = pts[:, 0]
+    y = pts[:, 1]
+
+    # Use degree 3 (cubic) unless there are not enough control points
+    k = min(3, len(control_points) - 1)
+    
+    # Parametric spline representation, s=0 forces the spline through the control points
+    tck, u = splprep([x, y], k=k, s=0)
+
+    # Estimate length to determine density of evaluation points
+    dx = np.diff(x)
+    dy = np.diff(y)
+    est_length = np.sum(np.sqrt(dx**2 + dy**2))
+    num_points = max(100, int(np.ceil(est_length / (resolution / 10.0))))
+
+    u_fine = np.linspace(0, 1, num_points)
+    x_fine, y_fine = splev(u_fine, tck)
+
+    # Compute analytic curvature from parametric spline derivatives
+    # κ = (x'y'' - y'x'') / (x'² + y'²)^(3/2)
+    dx_du, dy_du = splev(u_fine, tck, der=1)
+    d2x_du2, d2y_du2 = splev(u_fine, tck, der=2)
+    numerator = dx_du * d2y_du2 - dy_du * d2x_du2
+    denominator = (dx_du**2 + dy_du**2) ** 1.5
+    curvature = np.where(denominator > 1e-10, numerator / denominator, 0.0)
+
+    waypoints = list(zip(x_fine, y_fine))
+    return Path(waypoints, resolution=resolution, curvature=curvature)
+

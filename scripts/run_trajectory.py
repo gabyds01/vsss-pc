@@ -16,6 +16,7 @@ from vsss.trajectory.shapes import (
     generate_square,
     generate_circle,
     generate_s_curve,
+    generate_spline,
 )
 from vsss.control.lqr_tracker import LQRTracker
 from vsss.vision.reader import UDPReceiver
@@ -35,7 +36,7 @@ async def main():
         "--shape",
         type=str,
         default="square",
-        choices=["line", "square", "circle", "s_curve"],
+        choices=["line", "square", "circle", "s_curve", "spline"],
         help="Trajectory shape to track.",
     )
     parser.add_argument(
@@ -70,12 +71,20 @@ async def main():
         path = generate_square(side=0.6, center=(0.0, 0.0))
     elif args.shape == "circle":
         path = generate_circle(radius=0.45, center=(0.0, 0.0))
-    else:  # s_curve
+    elif args.shape == "s_curve":
         path = generate_s_curve(start_x=-0.6, end_x=0.6, amplitude=0.25)
+    else:  # spline
+        control_points = [
+            (-0.6, 0.0),
+            (-0.3, 0.15),
+            (0.0, -0.15),
+            (0.3, 0.15),
+            (0.6, 0.0),
+        ]
+        path = generate_spline(control_points)
 
-    # Precalculate curvature kappa = d(theta)/ds using unwrapped angles
-    unwrapped_theta = np.unwrap(path.theta)
-    path_curvature = np.gradient(unwrapped_theta, path.s)
+    # Curvature is now computed inside Path (analytically for splines,
+    # or via the planar curvature formula for other shapes)
 
     # Tracked coordinates history for plotting at the end
     actual_x = []
@@ -114,8 +123,6 @@ async def main():
                 continue
 
             robot_pos = (robot.x, robot.y, robot.orientation)
-            actual_x.append(robot.x)
-            actual_y.append(robot.y)
 
             # --- State Machine ---
             if state == "ALIGNING":
@@ -163,10 +170,16 @@ async def main():
                     print("\nAligned! Starting trajectory tracking...")
 
             elif state == "TRACKING":
+                actual_x.append(robot.x)
+                actual_y.append(robot.y)
+
                 # Local window search for progress s to prevent jumps (critical for circles/closed loops)
-                search_margin = 0.30
-                min_s = max(0.0, current_s - search_margin)
-                max_s = min(path.total_length, current_s + search_margin)
+                search_margin_forward = 0.50
+                search_margin_backward = 0.05
+                # Allow a small backward margin so the robot can recover when it
+                # drifts behind the reference, while still preventing large jumps.
+                min_s = max(0.0, current_s - search_margin_backward)
+                max_s = min(path.total_length, current_s + search_margin_forward)
 
                 indices = np.where((path.s >= min_s) & (path.s <= max_s))[0]
                 if len(indices) == 0:
@@ -185,11 +198,20 @@ async def main():
                 # Get reference target state at target progress
                 x_r, y_r, theta_r = path.get_point_at_distance(target_s)
 
-                # Interpolate curvature at target progress
-                k = np.interp(target_s, path.s, path_curvature)
+                # Interpolate curvature at target progress (uses analytic curvature for splines)
+                k = np.interp(target_s, path.s, path.curvature)
 
-                # Feedforward commands
-                v_r = args.speed
+                # Adaptive speed: reduce velocity at high-curvature sections
+                # to prevent feedforward omega_r from exceeding physical limits
+                curvature_scale = 3.0  # higher = more aggressive slowdown
+                v_r = args.speed / (1.0 + abs(k) * TRACK_WIDTH * curvature_scale)
+
+                # Decelerate near the end of the path to avoid overshooting
+                remaining = path.total_length - current_s
+                decel_zone = 0.15  # start slowing down 15 cm before the end
+                if remaining < decel_zone:
+                    v_r *= max(0.15, remaining / decel_zone)
+
                 omega_r = v_r * k
 
                 # Compute optimal velocities using LQR
@@ -197,10 +219,15 @@ async def main():
                     robot_pos, (x_r, y_r, theta_r), (v_r, omega_r)
                 )
 
-                # Check if robot has reached the end of the trajectory (within 3 cm)
-                if path.total_length - current_s < 0.03:
+                # Check if robot has reached the end of the trajectory
+                dist_to_end = np.hypot(robot.x - path.x[-1], robot.y - path.y[-1])
+                has_reached_end = (
+                    (path.total_length - current_s < 0.05) or (dist_to_end < 0.05)
+                )
+                if has_reached_end:
                     state = "FINISHED"
                     print("\nTrajectory completed!")
+                    break
 
             else:  # FINISHED
                 v_left, v_right = 0.0, 0.0

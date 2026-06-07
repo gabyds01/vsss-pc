@@ -24,7 +24,7 @@ class LQRTracker(BaseController):
         q_theta: float = 2.0,
         r_v: float = 1.0,
         r_omega: float = 0.5,
-        d_safe: float = 0.16,      # 16 cm safety zone (2x robot size)
+        d_safe: float = 0.10,      # 10 cm safety zone (~1.25x robot size)
         beta_q: float = 40.0,      # Angular penalty multiplier near walls
         gamma_r: float = 8.0,      # Angular actuator cost divisor near walls
         margin_target: float = 0.08,  # Target clamping margin (8 cm)

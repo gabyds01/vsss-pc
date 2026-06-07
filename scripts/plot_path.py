@@ -12,6 +12,7 @@ from vsss.trajectory.shapes import (
     generate_square,
     generate_circle,
     generate_s_curve,
+    generate_spline,
 )
 from vsss.analysis.plot_trajectory import plot_reference_trajectory
 
@@ -66,6 +67,23 @@ def main():
         s_curve_path,
         title="VSSS S-Curve Trajectory Test",
         save_path="graphs/s_curve_trajectory.png",
+        show=args.show,
+    )
+
+    # 5. Spline Path
+    print("Generating Spline Path...")
+    control_points = [
+        (-0.6, 0.0),
+        (-0.3, 0.15),
+        (0.0, -0.15),
+        (0.3, 0.15),
+        (0.6, 0.0),
+    ]
+    spline_path = generate_spline(control_points)
+    plot_reference_trajectory(
+        spline_path,
+        title="VSSS Spline Trajectory Test",
+        save_path="graphs/spline_trajectory.png",
         show=args.show,
     )
 

@@ -7,21 +7,28 @@ class Path:
     Interpolates the waypoints at a specified resolution (in meters).
     """
 
-    def __init__(self, waypoints: list[tuple[float, float]], resolution: float = 0.01):
+    def __init__(
+        self,
+        waypoints: list[tuple[float, float]],
+        resolution: float = 0.01,
+        curvature: np.ndarray | None = None,
+    ):
         if len(waypoints) < 2:
             raise ValueError("A path must have at least 2 waypoints.")
 
         self.raw_waypoints = np.array(waypoints)
         self.resolution = resolution
+        self._raw_curvature = np.asarray(curvature) if curvature is not None else None
         self.total_length = 0.0
         self.s = np.array([])
         self.x = np.array([])
         self.y = np.array([])
         self.theta = np.array([])
+        self.curvature = np.array([])
         self.interpolate_path()
 
     def interpolate_path(self):
-        """Interpolates waypoints and calculates tangent angles along the path."""
+        """Interpolates waypoints and calculates tangent angles and curvature along the path."""
         dx = np.diff(self.raw_waypoints[:, 0])
         dy = np.diff(self.raw_waypoints[:, 1])
         segment_lengths = np.sqrt(dx**2 + dy**2)
@@ -41,6 +48,20 @@ class Path:
         dx_interp = np.gradient(self.x, self.s)
         dy_interp = np.gradient(self.y, self.s)
         self.theta = np.arctan2(dy_interp, dx_interp)
+
+        # Compute curvature: κ = (x'y'' - y'x'') / (x'² + y'²)^(3/2)
+        if self._raw_curvature is not None and len(self._raw_curvature) == len(self.raw_waypoints):
+            # Use pre-computed curvature (e.g. analytic spline curvature)
+            self.curvature = np.interp(self.s, cumulative_dist, self._raw_curvature)
+        else:
+            # Compute from coordinates using the planar curvature formula
+            ddx = np.gradient(dx_interp, self.s)
+            ddy = np.gradient(dy_interp, self.s)
+            numerator = dx_interp * ddy - dy_interp * ddx
+            denominator = (dx_interp**2 + dy_interp**2) ** 1.5
+            self.curvature = np.where(
+                denominator > 1e-10, numerator / denominator, 0.0
+            )
 
     def get_closest_point(
         self, pos_x: float, pos_y: float
