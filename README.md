@@ -1,8 +1,6 @@
 # VSSS PC Control System
 
-## Project Goal
-
-The final goal of this project is to build a complete closed-loop control system for Very Small Size Soccer (VSSS) robots. The software on the PC acts as the brain: it reads robot and ball positions from a simulator (FIRASim) or a vision system, runs path tracking controllers to calculate target trajectories, and sends target differential wheel velocities (in meters per second) to an ESP32 serial-to-wireless bridge, which routes them to the physical robots. The system also processes telemetry and encoder feedback returned by the robots to monitor and plot actual performance against target trajectories on a web-based dashboard.
+PC-side control software for Very Small Size Soccer (VSSS) robots. Reads robot positions from the **FIRASim** simulator (or a vision system), computes path tracking commands using an **LQR controller**, and sends differential wheel velocities to the robots via the simulator or a serial ESP32 bridge.
 
 ```
 FIRASim (UDP Multicast) -> PC Control Loop -> Serial (pyserial) -> ESP32 Bridge -> ESP-NOW -> Robots
@@ -10,47 +8,139 @@ FIRASim (UDP Multicast) -> PC Control Loop -> Serial (pyserial) -> ESP32 Bridge 
                                +---------------- Serial <- ESP32 Bridge <- ESP-NOW <- Odometry -+
 ```
 
-## Current State
+## Features
 
-The foundation of the system is established with the following implemented components:
+- **LQR Path Tracking** — follows reference trajectories (line, square, circle, S-curve, spline) using a Linear Quadratic Regulator with Kanayama error projection
+- **Trajectory Generation** — parametric shapes with arc-length interpolation and analytic curvature computation for splines
+- **Gain Scheduling** — automatic Q/R weight adaptation near field walls to avoid collisions
+- **Adaptive Speed** — reduces velocity at high-curvature sections and decelerates near the end of the path
+- **Dual Comm Backends** — send commands to FIRASim (UDP) or physical robots (Serial → ESP32 → ESP-NOW)
+- **Plotting & Analysis** — reference trajectory visualization and actual-vs-reference tracking results on the VSSS field
 
-### Dependency and Package Management
-* Configured dependency tracking using uv. Project dependencies include protobuf, pyserial, numpy, scipy, and websockets.
-* Integrated the generated Python protobuf classes under the vsss package, with automatic system path resolution enabled on package import.
+## Setup
 
-### Configuration
-* Configured config.yaml to load central parameters for FIRASim network addresses and robot dimensions.
+Requires **Python 3.14+** and [uv](https://docs.astral.sh/uv/).
 
-### Vision and State Reception
-* Implemented the UDPReceiver class in vsss/vision/reader.py. It binds to the FIRASim multicast group, reads incoming environment states, and parses them into frame data, including ball and robot locations.
-
-### Communication and Command Transmission
-* Implemented the RobotCommand dataclass and CommandSender abstract base interface in vsss/comms/base.py.
-* Implemented the SimSender in vsss/comms/sim_sender.py to serialize and send command packets directly to the simulator.
-* Implemented the SerialSender in vsss/comms/serial_sender.py to communicate with the physical ESP32 bridge over serial. It packages wheel velocities, scales them to the required range, and appends a Dallas/Maxim CRC-8 checksum.
-
-## Setup and Run
-
-Install dependencies using uv:
 ```bash
+# Install all dependencies
 uv sync
 ```
 
-### Running the Vision Reader Test
-To start the UDP receiver and print positions of the ball and robots broadcasted by FIRASim:
+## Commands
+
+### Trajectory Tracking (FIRASim)
+
+Run the LQR controller to track a trajectory shape in real time. Requires FIRASim running.
+
+```bash
+# Available shapes: line, square, circle, s_curve, spline
+uv run python scripts/run_trajectory.py --shape spline
+
+# Options
+uv run python scripts/run_trajectory.py --shape circle --speed 0.4   # Custom speed (m/s)
+uv run python scripts/run_trajectory.py --shape square --yellow      # Control yellow team
+uv run python scripts/run_trajectory.py --shape line --id 1          # Control robot ID 1
+```
+
+Tracking results are saved to `graphs/lqr_tracking_results_<shape>.png`.
+
+### Generate Trajectory Plots
+
+Plot all reference trajectories on the VSSS field (no simulator needed):
+
+```bash
+uv run python scripts/plot_path.py           # Save plots to graphs/
+uv run python scripts/plot_path.py --show     # Also display interactively
+```
+
+Generates: `graphs/{line,square,circle,s_curve,spline}_trajectory.png`
+
+### Generate Protobuf Classes
+
+Regenerate the Python protobuf bindings from the `.proto` definitions:
+
+```bash
+cd scripts && bash generate_proto.sh
+```
+
+Output goes to `vsss/vision/proto_generated/`.
+
+### Vision Reader Test
+
+Print live ball and robot positions from FIRASim:
+
 ```bash
 uv run -m vsss.vision.reader
 ```
 
-### Running the Simulator Command Test
-To send test command packets to a local FIRASim instance:
+### Simulator Command Test
+
+Send test wheel velocity commands to FIRASim:
+
 ```bash
 uv run -m vsss.comms.sim_sender
 ```
 
-### Running the Serial Command Test
-To test sending a packet over the USB serial interface to the ESP32 bridge:
+### Serial Command Test
+
+Send a test packet to the ESP32 bridge over USB serial:
+
 ```bash
-uv run -m vsss.comms.serial_sender [optional_port_name]
+uv run -m vsss.comms.serial_sender              # Default: /dev/ttyUSB0
+uv run -m vsss.comms.serial_sender /dev/ttyACM0  # Custom port
 ```
-By default, the serial sender targets /dev/ttyUSB0 unless a different port is specified as an argument.
+
+### Run Tests
+
+```bash
+uv run pytest
+```
+
+## Project Structure
+
+```
+vsss-pc/
+├── config.yaml                  # Robot dimensions, field size, network addresses
+├── pyproject.toml               # Dependencies and project metadata
+│
+├── vsss/                        # Main package
+│   ├── config.py                # YAML config loader
+│   ├── control/
+│   │   ├── base.py              # Abstract controller interface
+│   │   └── lqr_tracker.py       # LQR path tracking with wall gain scheduling
+│   ├── trajectory/
+│   │   ├── path.py              # Arc-length interpolated path with curvature
+│   │   └── shapes.py            # Shape generators (line, square, circle, s_curve, spline)
+│   ├── kinematics/
+│   │   └── differential.py      # Unicycle ↔ differential drive conversion
+│   ├── vision/
+│   │   ├── reader.py            # UDP multicast receiver for FIRASim
+│   │   └── proto_generated/     # Auto-generated protobuf classes
+│   ├── comms/
+│   │   ├── base.py              # RobotCommand dataclass + CommandSender interface
+│   │   ├── sim_sender.py        # FIRASim UDP command sender
+│   │   └── serial_sender.py     # ESP32 serial bridge sender (CRC-8)
+│   └── analysis/
+│       └── plot_trajectory.py   # VSSS field drawing and trajectory plotting
+│
+├── scripts/
+│   ├── run_trajectory.py        # Main LQR tracking loop (FIRASim)
+│   ├── plot_path.py             # Generate reference trajectory plots
+│   └── generate_proto.sh        # Protobuf code generation
+│
+├── tests/                       # Unit tests (pytest)
+├── proto/                       # Protobuf definitions (git submodule)
+└── graphs/                      # Generated plots (gitignored)
+```
+
+## Configuration
+
+All physical and network parameters are in [`config.yaml`](config.yaml):
+
+| Section | Key Parameters |
+|---------|---------------|
+| `robot_dimensions` | `wheel_radius` (0.03m), `track_width` (0.075m), max velocities |
+| `field_dimensions` | `play_area_length` (1.50m), `play_area_width` (1.30m) |
+| `firasim` | Multicast read IP/port, command send IP/port |
+| `hardware` | ESP32 bridge MAC, robot MAC addresses |
+| `mode` | `"sim"` (FIRASim) or `"hw"` (physical robots) |
