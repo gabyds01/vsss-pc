@@ -66,3 +66,7 @@ Thumbs.db
 # Others
 docs/
 backup/
+
+# Output / Experiment data
+graphs/
+experiments/

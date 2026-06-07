@@ -6,6 +6,13 @@ robot_dimensions:
   length: 0.08
   width: 0.08
   height: 0.08
+  # max velocity limits (m/s)
+  max_velocity_sim: 1.5
+  max_velocity_hw: 0.34
+
+# System Execution Mode: "sim" for simulator (FIRASim), "hw" for physical robot hardware
+mode: "sim"
+
 
 field_dimensions:
   # all in meters

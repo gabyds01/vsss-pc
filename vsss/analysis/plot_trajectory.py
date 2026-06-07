@@ -60,7 +60,7 @@ def draw_vsss_field(ax):
     )
     ax.add_patch(right_gk)
 
-    # Goals (Porterias: 10cm depth x 40cm width, centered at y = 0, extending outwards)
+    # Goals (10cm depth x 40cm width, centered at y = 0, extending outwards)
     # Left goal (x = -0.85 to -0.75, y = -0.20 to 0.20)
     left_goal = patches.Rectangle(
         (-0.85, -0.20),

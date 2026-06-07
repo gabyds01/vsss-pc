@@ -6,6 +6,7 @@ from vsss.vision.proto_generated.packet_pb2 import Packet
 # Default target destination for FIRASim commands
 MCAST_IP = SETTINGS["firasim"]["send_ip"]
 MCAST_PORT = SETTINGS["firasim"]["send_port"]
+WHEEL_RADIUS = SETTINGS["robot_dimensions"]["wheel_radius"]
 
 
 class SimSender(CommandSender):
@@ -46,8 +47,9 @@ class SimSender(CommandSender):
             cmd = packet.cmd.robot_commands.add()
             cmd.id = robot_command.robot_id
             cmd.yellowteam = robot_command.yellow_team
-            cmd.wheel_left = robot_command.wheel_left
-            cmd.wheel_right = robot_command.wheel_right
+            # Convert wheel linear velocity (m/s) to wheel angular velocity (rad/s) for FIRASim
+            cmd.wheel_left = robot_command.wheel_left / WHEEL_RADIUS
+            cmd.wheel_right = robot_command.wheel_right / WHEEL_RADIUS
 
         return packet.SerializeToString()
 
