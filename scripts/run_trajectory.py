@@ -19,6 +19,7 @@ from vsss.trajectory.shapes import (
     generate_spline,
 )
 from vsss.control.lqr_tracker import LQRTracker
+from vsss.control.pure_pursuit import PurePursuitTracker
 from vsss.vision.reader import UDPReceiver
 from vsss.comms import RobotCommand, SimSender
 from vsss.analysis.plot_trajectory import draw_vsss_field
@@ -30,7 +31,7 @@ TRACK_WIDTH = SETTINGS["robot_dimensions"]["track_width"]
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Run LQR path tracking control in FIRASim."
+        description="Run path tracking control in FIRASim."
     )
     parser.add_argument(
         "--shape",
@@ -56,12 +57,27 @@ async def main():
         default=0,
         help="Robot ID to control (default: 0).",
     )
+    parser.add_argument(
+        "--controller",
+        type=str,
+        default="lqr",
+        choices=["lqr", "pure_pursuit"],
+        help="Path tracking controller to use (default: lqr).",
+    )
     args = parser.parse_args()
 
-    # 1. Initialize Comms, Vision and LQR Controller
+    # 1. Initialize Comms, Vision and Controller
     receiver = UDPReceiver()
     sender = SimSender()
-    tracker = LQRTracker()
+
+    if args.controller == "lqr":
+        tracker = LQRTracker()
+        lookahead = 0.05   # LQR uses a small lookahead (5 cm)
+    else:
+        tracker = PurePursuitTracker()
+        lookahead = tracker.lookahead_distance  # PP uses its own (12 cm)
+
+    controller_label = args.controller.upper().replace("_", " ")
 
     # 2. Generate Reference Path
     print(f"Generating '{args.shape}' path...")
@@ -191,8 +207,7 @@ async def main():
                 min_idx = indices[np.argmin(sq_distances)]
                 current_s = path.s[min_idx]
 
-                # Look ahead slightly (e.g. 5 cm) to avoid cutting corners
-                lookahead = 0.05
+                # Look ahead to avoid cutting corners (distance set per controller)
                 target_s = min(current_s + lookahead, path.total_length)
 
                 # Get reference target state at target progress
@@ -212,9 +227,10 @@ async def main():
                 if remaining < decel_zone:
                     v_r *= max(0.15, remaining / decel_zone)
 
-                omega_r = v_r * k
+                # Feedforward angular velocity (used by LQR; ignored by Pure Pursuit)
+                omega_r = v_r * k if args.controller == "lqr" else 0.0
 
-                # Compute optimal velocities using LQR
+                # Compute wheel velocities using the selected controller
                 v_left, v_right = tracker.compute_wheel_velocities(
                     robot_pos, (x_r, y_r, theta_r), (v_r, omega_r)
                 )
@@ -293,7 +309,7 @@ async def main():
                 color="#ffa500",
                 linewidth=2.5,
                 zorder=5,
-                label="Actual Path (LQR)",
+                label=f"Actual Path ({controller_label})",
             )
             # Start/End points
             ax.scatter(
@@ -315,7 +331,7 @@ async def main():
                 text.set_color("white")
 
             ax.set_title(
-                f"LQR Path Tracking Results: {args.shape.upper()}",
+                f"{controller_label} Path Tracking Results: {args.shape.upper()}",
                 color="white",
                 fontsize=14,
                 pad=15,
@@ -323,7 +339,8 @@ async def main():
 
             # Save results graph
             shape_suffix = args.shape.replace("_", "")
-            results_path = f"graphs/lqr_tracking_results_{shape_suffix}.png"
+            ctrl_suffix = args.controller.replace("_", "")
+            results_path = f"graphs/{ctrl_suffix}_tracking_results_{shape_suffix}.png"
             plt.savefig(
                 results_path,
                 dpi=300,

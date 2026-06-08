@@ -1,6 +1,6 @@
 # VSSS PC Control System
 
-PC-side control software for Very Small Size Soccer (VSSS) robots. Reads robot positions from the **FIRASim** simulator (or a vision system), computes path tracking commands using an **LQR controller**, and sends differential wheel velocities to the robots via the simulator or a serial ESP32 bridge.
+PC-side control software for Very Small Size Soccer (VSSS) robots. Reads robot positions from the **FIRASim** simulator (or a vision system), computes path tracking commands using **LQR** or **Pure Pursuit** controllers, and sends differential wheel velocities to the robots via the simulator or a serial ESP32 bridge.
 
 ```
 FIRASim (UDP Multicast) -> PC Control Loop -> Serial (pyserial) -> ESP32 Bridge -> ESP-NOW -> Robots
@@ -10,9 +10,9 @@ FIRASim (UDP Multicast) -> PC Control Loop -> Serial (pyserial) -> ESP32 Bridge 
 
 ## Features
 
-- **LQR Path Tracking** — follows reference trajectories (line, square, circle, S-curve, spline) using a Linear Quadratic Regulator with Kanayama error projection
-- **Trajectory Generation** — parametric shapes with arc-length interpolation and analytic curvature computation for splines
-- **Gain Scheduling** — automatic Q/R weight adaptation near field walls to avoid collisions
+- **LQR Path Tracking** — follows reference trajectories using a Linear Quadratic Regulator with Kanayama error projection and wall gain scheduling
+- **Pure Pursuit Path Tracking** — geometric controller that steers toward a lookahead point on the path (κ = 2·y/L²)
+- **Trajectory Generation** — parametric shapes (line, square, circle, S-curve, spline) with arc-length interpolation and analytic curvature
 - **Adaptive Speed** — reduces velocity at high-curvature sections and decelerates near the end of the path
 - **Dual Comm Backends** — send commands to FIRASim (UDP) or physical robots (Serial → ESP32 → ESP-NOW)
 - **Plotting & Analysis** — reference trajectory visualization and actual-vs-reference tracking results on the VSSS field
@@ -30,19 +30,21 @@ uv sync
 
 ### Trajectory Tracking (FIRASim)
 
-Run the LQR controller to track a trajectory shape in real time. Requires FIRASim running.
+Run a path tracking controller in real time. Requires FIRASim running.
 
 ```bash
 # Available shapes: line, square, circle, s_curve, spline
+# Available controllers: lqr (default), pure_pursuit
 uv run python scripts/run_trajectory.py --shape spline
+uv run python scripts/run_trajectory.py --shape spline --controller pure_pursuit
 
-# Options
+# Other options
 uv run python scripts/run_trajectory.py --shape circle --speed 0.4   # Custom speed (m/s)
 uv run python scripts/run_trajectory.py --shape square --yellow      # Control yellow team
 uv run python scripts/run_trajectory.py --shape line --id 1          # Control robot ID 1
 ```
 
-Tracking results are saved to `graphs/lqr_tracking_results_<shape>.png`.
+Tracking results are saved to `graphs/<controller>_tracking_results_<shape>.png`.
 
 ### Generate Trajectory Plots
 
@@ -107,7 +109,8 @@ vsss-pc/
 │   ├── config.py                # YAML config loader
 │   ├── control/
 │   │   ├── base.py              # Abstract controller interface
-│   │   └── lqr_tracker.py       # LQR path tracking with wall gain scheduling
+│   │   ├── lqr_tracker.py       # LQR path tracking with wall gain scheduling
+│   │   └── pure_pursuit.py      # Pure Pursuit geometric path tracking
 │   ├── trajectory/
 │   │   ├── path.py              # Arc-length interpolated path with curvature
 │   │   └── shapes.py            # Shape generators (line, square, circle, s_curve, spline)
@@ -124,7 +127,7 @@ vsss-pc/
 │       └── plot_trajectory.py   # VSSS field drawing and trajectory plotting
 │
 ├── scripts/
-│   ├── run_trajectory.py        # Main LQR tracking loop (FIRASim)
+│   ├── run_trajectory.py        # Main tracking loop (LQR / Pure Pursuit)
 │   ├── plot_path.py             # Generate reference trajectory plots
 │   └── generate_proto.sh        # Protobuf code generation
 │
