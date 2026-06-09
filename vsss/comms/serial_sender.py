@@ -44,6 +44,7 @@ class SerialSender(CommandSender):
         self.port = port
         self.baudrate = baudrate
         self.ser = None
+        self.rx_buffer = bytearray()
 
     def open(self):
         """Open the serial connection."""
@@ -77,6 +78,66 @@ class SerialSender(CommandSender):
         for cmd in commands:
             packet = build_packet(cmd)
             self.ser.write(packet)
+
+    def read_telemetry(self) -> list[dict]:
+        """Read all available bytes from serial, update the buffer, and parse valid telemetry packets."""
+        if not self.is_open:
+            try:
+                self.open()
+            except Exception:
+                return []
+
+        if not self.is_open:
+            return []
+
+        try:
+            if self.ser.in_waiting > 0:
+                self.rx_buffer.extend(self.ser.read(self.ser.in_waiting))
+        except Exception:
+            return []
+
+        packets = []
+        while True:
+            idx = self.rx_buffer.find(0xBB)
+            if idx == -1:
+                self.rx_buffer.clear()
+                break
+
+            if idx > 0:
+                del self.rx_buffer[:idx]
+
+            if len(self.rx_buffer) < 2:
+                break
+
+            pkt_len = self.rx_buffer[1]
+            if pkt_len != 0x0A:
+                del self.rx_buffer[0]
+                continue
+
+            expected_size = 2 + pkt_len
+            if len(self.rx_buffer) < expected_size:
+                break
+
+            packet_bytes = bytes(self.rx_buffer[:expected_size])
+            payload = packet_bytes[:-1]
+            expected_crc = packet_bytes[-1]
+
+            if crc8_dallas(payload) == expected_crc:
+                robot_id = packet_bytes[2]
+                wl, wr, ed_l, ed_r = struct.unpack("<hhhh", packet_bytes[3:11])
+
+                packets.append({
+                    "robot_id": robot_id,
+                    "wheel_left_vel": wl / SCALE_FACTOR,
+                    "wheel_right_vel": wr / SCALE_FACTOR,
+                    "enc_delta_left": ed_l,
+                    "enc_delta_right": ed_r,
+                })
+                del self.rx_buffer[:expected_size]
+            else:
+                del self.rx_buffer[0]
+
+        return packets
 
     def __del__(self):
         self.close()

@@ -21,7 +21,7 @@ from vsss.trajectory.shapes import (
 from vsss.control.lqr_tracker import LQRTracker
 from vsss.control.pure_pursuit import PurePursuitTracker
 from vsss.vision.reader import UDPReceiver
-from vsss.comms import RobotCommand, SimSender, SerialSender
+from vsss.comms import RobotCommand, SimSender, SerialSender, BothSender
 from vsss.analysis.plot_trajectory import draw_vsss_field
 from vsss.analysis import TelemetryLogger
 from vsss.kinematics.differential import unicycle_to_differential
@@ -69,17 +69,28 @@ async def main():
         "--mode",
         type=str,
         default=None,
-        choices=["sim", "hw"],
-        help="System execution mode: 'sim' or 'hw' (overrides config.yaml).",
+        choices=["sim", "hw", "both"],
+        help="System execution mode: 'sim', 'hw', or 'both' (overrides config.yaml).",
     )
     args = parser.parse_args()
 
     # 1. Initialize Comms, Vision and Controller
     mode = args.mode or SETTINGS.get("mode", "sim")
+
+    # Update MAX_VELOCITY dynamically based on the active mode
+    import vsss.kinematics.differential as diff
+    if mode == "sim":
+        diff.MAX_VELOCITY = SETTINGS["robot_dimensions"].get("max_velocity_sim", 1.5)
+    else:
+        diff.MAX_VELOCITY = SETTINGS["robot_dimensions"].get("max_velocity_hw", 0.34)
+
     receiver = UDPReceiver()
     if mode == "hw":
         sender = SerialSender()
         print("Using Hardware Mode (SerialSender)")
+    elif mode == "both":
+        sender = BothSender()
+        print("Using Dual Mode (BothSender: Sim + Serial)")
     else:
         sender = SimSender()
         print("Using Simulation Mode (SimSender)")
@@ -144,7 +155,7 @@ async def main():
 
             # Read telemetry from serial port (hardware mode)
             latest_telemetry = None
-            if mode == "hw":
+            if mode in ("hw", "both"):
                 telemetry_packets = sender.read_telemetry()
                 if telemetry_packets:
                     for pkt in telemetry_packets:

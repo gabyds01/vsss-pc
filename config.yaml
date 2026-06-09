@@ -10,7 +10,7 @@ robot_dimensions:
   max_velocity_sim: 1.5
   max_velocity_hw: 0.34
 
-# System Execution Mode: "sim" for simulator (FIRASim), "hw" for physical robot hardware
+# System Execution Mode: "sim" for simulator (FIRASim), "hw" for physical robot hardware, "both" for both simulator and physical robot
 mode: "sim"
 
 

@@ -4,7 +4,7 @@ from vsss.config import SETTINGS
 WHEEL_RADIUS = SETTINGS["robot_dimensions"]["wheel_radius"]
 TRACK_WIDTH = SETTINGS["robot_dimensions"]["track_width"]
 
-# Determine maximum velocity limit based on the system execution mode ("sim" or "hw")
+# Determine maximum velocity limit based on the system execution mode ("sim", "hw", or "both")
 MODE = SETTINGS.get("mode", "sim")
 if MODE == "sim":
     MAX_VELOCITY = SETTINGS["robot_dimensions"].get("max_velocity_sim", 1.5)
@@ -13,12 +13,14 @@ else:
 
 
 def saturate_velocities(
-    v_left: float, v_right: float, max_vel: float = MAX_VELOCITY
+    v_left: float, v_right: float, max_vel: float = None
 ) -> tuple[float, float]:
     """Saturate wheel velocities to the maximum limit, scaling both proportionally
 
     to preserve the steering ratio/curvature of the robot path.
     """
+    if max_vel is None:
+        max_vel = MAX_VELOCITY
     max_val = max(abs(v_left), abs(v_right))
     if max_val > max_vel:
         v_left = (v_left / max_val) * max_vel
