@@ -21,8 +21,9 @@ from vsss.trajectory.shapes import (
 from vsss.control.lqr_tracker import LQRTracker
 from vsss.control.pure_pursuit import PurePursuitTracker
 from vsss.vision.reader import UDPReceiver
-from vsss.comms import RobotCommand, SimSender
+from vsss.comms import RobotCommand, SimSender, SerialSender
 from vsss.analysis.plot_trajectory import draw_vsss_field
+from vsss.analysis import TelemetryLogger
 from vsss.kinematics.differential import unicycle_to_differential
 from vsss.config import SETTINGS
 
@@ -64,11 +65,26 @@ async def main():
         choices=["lqr", "pure_pursuit"],
         help="Path tracking controller to use (default: lqr).",
     )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default=None,
+        choices=["sim", "hw"],
+        help="System execution mode: 'sim' or 'hw' (overrides config.yaml).",
+    )
     args = parser.parse_args()
 
     # 1. Initialize Comms, Vision and Controller
+    mode = args.mode or SETTINGS.get("mode", "sim")
     receiver = UDPReceiver()
-    sender = SimSender()
+    if mode == "hw":
+        sender = SerialSender()
+        print("Using Hardware Mode (SerialSender)")
+    else:
+        sender = SimSender()
+        print("Using Simulation Mode (SimSender)")
+
+    telemetry_logger = TelemetryLogger(controller=args.controller, shape=args.shape)
 
     if args.controller == "lqr":
         tracker = LQRTracker()
@@ -125,6 +141,18 @@ async def main():
             # Read latest vision data (awaits next packet)
             data = await receiver.receive()
             frame, field, _, _ = receiver.deserialize(data)
+
+            # Read telemetry from serial port (hardware mode)
+            latest_telemetry = None
+            if mode == "hw":
+                telemetry_packets = sender.read_telemetry()
+                if telemetry_packets:
+                    for pkt in telemetry_packets:
+                        if pkt["robot_id"] == args.id:
+                            latest_telemetry = pkt
+
+            # Initialize reference variables
+            x_r, y_r, theta_r = 0.0, 0.0, 0.0
 
             # Find target robot based on team and ID
             robots = frame.robots_yellow if args.yellow else frame.robots_blue
@@ -248,7 +276,18 @@ async def main():
             else:  # FINISHED
                 v_left, v_right = 0.0, 0.0
 
-            # 3. Transmit command packet to simulator
+            # Log telemetry to CSV
+            ref_pos = (x_r, y_r, theta_r) if state in ("ALIGNING", "TRACKING") else (0.0, 0.0, 0.0)
+            telemetry_logger.log(
+                state=state,
+                robot_id=args.id,
+                vision_pos=robot_pos,
+                ref_pos=ref_pos,
+                target_vel=(v_left, v_right),
+                actual_vel_and_encoders=latest_telemetry,
+            )
+
+            # 3. Transmit command packet to simulator/robot
             cmd = RobotCommand(
                 robot_id=args.id,
                 yellow_team=args.yellow,
@@ -285,6 +324,9 @@ async def main():
         )
         sender.send([stop_cmd])
         sender.close()
+        
+        # Close telemetry logger
+        telemetry_logger.close()
 
         # Plot actual vs reference trajectory
         if actual_x:

@@ -70,3 +70,4 @@ backup/
 # Output / Experiment data
 graphs/
 experiments/
+telemetry_logs/

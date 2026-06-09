@@ -15,7 +15,8 @@ FIRASim (UDP Multicast) -> PC Control Loop -> Serial (pyserial) -> ESP32 Bridge 
 - **Trajectory Generation** — parametric shapes (line, square, circle, S-curve, spline) with arc-length interpolation and analytic curvature
 - **Adaptive Speed** — reduces velocity at high-curvature sections and decelerates near the end of the path
 - **Dual Comm Backends** — send commands to FIRASim (UDP) or physical robots (Serial → ESP32 → ESP-NOW)
-- **Plotting & Analysis** — reference trajectory visualization and actual-vs-reference tracking results on the VSSS field
+- **Telemetry Logging** — records real-time control state, reference coordinates, vision positioning, target wheel velocities, actual wheel velocities, and encoder tick deltas to CSV format
+- **Plotting & Analysis** — reference trajectory visualization, actual-vs-reference tracking results on the VSSS field, and detailed telemetry velocity/encoder profiling
 
 ## Setup
 
@@ -28,15 +29,16 @@ uv sync
 
 ## Commands
 
-### Trajectory Tracking (FIRASim)
+### Trajectory Tracking (FIRASim / Physical Robots)
 
-Run a path tracking controller in real time. Requires FIRASim running.
+Run a path tracking controller in real time. Requires either FIRASim (for simulation) or the ESP32 Serial Bridge (for hardware).
 
 ```bash
 # Available shapes: line, square, circle, s_curve, spline
 # Available controllers: lqr (default), pure_pursuit
+# Available modes: sim (default), hw
 uv run python scripts/run_trajectory.py --shape spline
-uv run python scripts/run_trajectory.py --shape spline --controller pure_pursuit
+uv run python scripts/run_trajectory.py --shape spline --controller pure_pursuit --mode sim
 
 # Other options
 uv run python scripts/run_trajectory.py --shape circle --speed 0.4   # Custom speed (m/s)
@@ -45,6 +47,23 @@ uv run python scripts/run_trajectory.py --shape line --id 1          # Control r
 ```
 
 Tracking results are saved to `graphs/<controller>_tracking_results_<shape>.png`.
+
+### Telemetry Logging & Plotting
+
+When running `run_trajectory.py`, a telemetry session is automatically written to `telemetry_logs/` formatted as `telemetry_<controller>_<shape>_YYYYMMDD_HHMMSS.csv`. 
+
+To visualize the tracking path and actual vs target wheel velocities/encoder profiles from the logs:
+
+```bash
+# Plot the latest CSV telemetry log
+uv run python scripts/plot_telemetry.py
+
+# Plot and save output images next to the CSV log
+uv run python scripts/plot_telemetry.py --save
+
+# Plot a specific CSV log file headlessly (without opening matplotlib UI)
+uv run python scripts/plot_telemetry.py --file telemetry_logs/your_log_file.csv --no-show
+```
 
 ### Generate Trajectory Plots
 
@@ -122,17 +141,20 @@ vsss-pc/
 │   ├── comms/
 │   │   ├── base.py              # RobotCommand dataclass + CommandSender interface
 │   │   ├── sim_sender.py        # FIRASim UDP command sender
-│   │   └── serial_sender.py     # ESP32 serial bridge sender (CRC-8)
+│   │   └── serial_sender.py     # ESP32 serial bridge sender (CRC-8) and telemetry receiver
 │   └── analysis/
-│       └── plot_trajectory.py   # VSSS field drawing and trajectory plotting
+│       ├── plot_trajectory.py   # VSSS field drawing and trajectory plotting
+│       └── telemetry_logger.py  # CSV telemetry recording
 │
 ├── scripts/
 │   ├── run_trajectory.py        # Main tracking loop (LQR / Pure Pursuit)
 │   ├── plot_path.py             # Generate reference trajectory plots
+│   ├── plot_telemetry.py        # Graph path and velocity/encoder from CSV logs
 │   └── generate_proto.sh        # Protobuf code generation
 │
 ├── tests/                       # Unit tests (pytest)
 ├── proto/                       # Protobuf definitions (git submodule)
+├── telemetry_logs/              # Generated CSV telemetry logs (gitignored)
 └── graphs/                      # Generated plots (gitignored)
 ```
 
